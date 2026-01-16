@@ -92,8 +92,8 @@
 
     .close-camera-btn {
       position: absolute;
-      top: 20px;
-      left: 20px;
+      top: 2vh;
+      left: 4vw;
       width: 40px;
       height: 40px;
       background: rgba(0,0,0,0.5);
@@ -341,6 +341,7 @@
     }
 
     .download-link {
+      text-align: center;
       display: inline-block;
       margin-top: clamp(8px, 0.8vw, 12px);
       padding: clamp(8px, 0.8vw, 12px) clamp(16px, 1.5vw, 24px);
@@ -674,24 +675,104 @@
       const ctx = canvas.getContext('2d');
       ctx.drawImage(videoElement, 0, 0, w, h);
 
-      // 底部水印背景
-      const watermarkHeight = Math.max(96, h * 0.08);
-      ctx.fillStyle = 'rgba(0,0,0,0.65)';
-      ctx.fillRect(0, h - watermarkHeight, w, watermarkHeight);
+      // 收集要显示的信息
+      const infoLines = [];
+      
+      // 1. 拍摄时间
+      const currentTime = timeEl.textContent;
+      if (currentTime && currentTime !== '—') {
+        infoLines.push('拍摄时间: ' + currentTime);
+      }
+      
+      // 2. 经纬度
+      const lat = latEl.textContent;
+      const lng = lngEl.textContent;
+      if (lat && lat !== '获取中…' && lat !== '定位失败' && lat !== '不支持定位' && 
+          lng && lng !== '获取中…' && lng !== '定位失败' && lng !== '不支持定位') {
+        infoLines.push('经度: ' + lng);
+        infoLines.push('纬度: ' + lat);
+      }
+      
+      // 3. 定位精度
+      const accuracy = accEl.textContent;
+      if (accuracy && accuracy !== '—' && accuracy !== '定位失败') {
+        infoLines.push('定位精度: ' + accuracy);
+      }
+      
+      // 4. 定位最后更新时间
+      const locationTime = locationUpdateTimeEl.textContent;
+      if (locationTime && locationTime !== '—') {
+        infoLines.push('定位更新: ' + locationTime);
+      }
+      
+      // 5. 所在位置（可选，仅在成功获取时显示）
+      const address = addrEl.textContent;
+      if (address && 
+          address !== '解析中…' && 
+          address !== '位置解析失败' && 
+          address !== '无法解析具体位置' && 
+          address !== '—' && 
+          address !== '定位失败') {
+        infoLines.push('位置: ' + address);
+      }
 
-      ctx.fillStyle = '#fff';
-      const fontSize = Math.max(16, w * 0.015);
+      // 计算字体和间距（更紧凑）
+      const fontSize = Math.max(14, w * 0.012);
+      const paddingX = Math.max(12, w * 0.012);
+      const paddingY = Math.max(8, h * 0.008);
+      const lineHeight = fontSize * 1.3;
+      
+      // 设置字体以测量文字宽度
       ctx.font = `${fontSize}px system-ui`;
       ctx.textBaseline = 'top';
+      
+      // 计算每行文字的实际宽度
+      const textMetrics = infoLines.map(line => ctx.measureText(line).width);
+      const maxTextWidth = Math.max(...textMetrics);
+      
+      // 计算紧凑的水印区域尺寸
+      const watermarkWidth = maxTextWidth + paddingX * 2;
+      const watermarkHeight = lineHeight * infoLines.length + paddingY * 2;
+      
+      // 水印位置（左下角，更靠边）
+      const watermarkX = paddingX * 0.5;
+      const watermarkY = h - watermarkHeight - paddingY * 0.5;
+      
+      // 绘制更淡的圆角矩形背景
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      const radius = Math.min(8, fontSize * 0.5);
+      ctx.beginPath();
+      ctx.moveTo(watermarkX + radius, watermarkY);
+      ctx.lineTo(watermarkX + watermarkWidth - radius, watermarkY);
+      ctx.quadraticCurveTo(watermarkX + watermarkWidth, watermarkY, watermarkX + watermarkWidth, watermarkY + radius);
+      ctx.lineTo(watermarkX + watermarkWidth, watermarkY + watermarkHeight - radius);
+      ctx.quadraticCurveTo(watermarkX + watermarkWidth, watermarkY + watermarkHeight, watermarkX + watermarkWidth - radius, watermarkY + watermarkHeight);
+      ctx.lineTo(watermarkX + radius, watermarkY + watermarkHeight);
+      ctx.quadraticCurveTo(watermarkX, watermarkY + watermarkHeight, watermarkX, watermarkY + watermarkHeight - radius);
+      ctx.lineTo(watermarkX, watermarkY + radius);
+      ctx.quadraticCurveTo(watermarkX, watermarkY, watermarkX + radius, watermarkY);
+      ctx.closePath();
+      ctx.fill();
 
-      const timeText = timeEl.textContent;
-      const locationText = addrEl.textContent || '';
+      // 绘制文字（白色，带阴影增强可读性）
+      ctx.fillStyle = '#fff';
+      ctx.shadowColor = 'rgba(0,0,0,0.8)';
+      ctx.shadowBlur = 3;
+      ctx.shadowOffsetX = 1;
+      ctx.shadowOffsetY = 1;
 
-      const padding = Math.max(20, w * 0.02);
-      const lineHeight = fontSize * 1.6;
-
-      ctx.fillText(timeText, padding, h - watermarkHeight + padding);
-      ctx.fillText(locationText, padding, h - watermarkHeight + padding + lineHeight);
+      // 逐行绘制信息
+      infoLines.forEach((line, index) => {
+        const x = watermarkX + paddingX;
+        const y = watermarkY + paddingY + (lineHeight * index);
+        ctx.fillText(line, x, y);
+      });
+      
+      // 重置阴影
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 0;
 
       return canvas.toDataURL('image/jpeg', 0.95);
     }
@@ -916,11 +997,6 @@
         
         // 重置提示动画
         longPressTip.style.animation = 'none';
-        
-        // 给用户提示
-        setTimeout(() => {
-          alert('照片已保存到下载文件夹！\n\n如果没有自动下载，请长按照片选择"保存图片"。');
-        }, 200);
         
       } catch (error) {
         console.error('下载失败:', error);
