@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>经纬相机</title>
+  <link rel="icon" href="./logo.png">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <style>
+    :root {
+      --bg: #0f1115;
+      --card: #161a22;
+      --text-main: #e6e8ee;
+      --text-sub: #9aa0ad;
+      --accent: #4da3ff;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      margin: 0;
+      background: radial-gradient(1200px 600px at 50% -200px, #1b2130, var(--bg));
+      color: var(--text-main);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    /* ============== 移动端全屏拍照模式 ============== */
+    .mobile-camera-mode {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #000;
+      z-index: 9999;
+      flex-direction: column;
+    }
+
+    .mobile-camera-mode.active {
+      display: flex;
+    }
+
+    .mobile-camera-video {
+      flex: 1;
+      width: 100%;
+      object-fit: contain;
+    }
+
+    .mobile-camera-controls {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 20px;
+      background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 20px;
+      height: 120px;
+    }
+
+    .shutter-btn {
+      width: 70px;
+      height: 70px;
+      border-radius: 50%;
+      background: #fff;
+      border: 4px solid rgba(255,255,255,0.3);
+      cursor: pointer;
+      transition: transform 0.1s;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .shutter-btn img {
+      width: 60%;
+      height: 60%;
+      object-fit: contain;
+      pointer-events: none;
+    }
+
+    .shutter-btn:active {
+      transform: scale(0.9);
+    }
+
+    .close-camera-btn {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      width: 40px;
+      height: 40px;
+      background: rgba(0,0,0,0.5);
+      border-radius: 50%;
+      border: none;
+      color: #fff;
+      font-size: 24px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+    }
+
+    /* 拍照后的预览和保存界面 */
+    .photo-preview-mode {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #000;
+      z-index: 10000;
+      flex-direction: column;
+    }
+
+    .photo-preview-mode.active {
+      display: flex;
+    }
+
+    .photo-preview-img {
+      flex: 1;
+      width: 100%;
+      object-fit: contain;
+    }
+
+    .photo-preview-controls {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 20px;
+      background: linear-gradient(to top, rgba(0,0,0,0.9), transparent);
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      gap: 15px;
+      height: 100px;
+    }
+
+    .preview-btn {
+      flex: 1;
+      padding: 14px 20px;
+      border-radius: 12px;
+      border: none;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.1s;
+    }
+
+    .preview-btn:active {
+      transform: scale(0.95);
+    }
+
+    .preview-btn.cancel {
+      background: rgba(255,255,255,0.15);
+      color: #fff;
+    }
+
+    .preview-btn.save {
+      background: var(--accent);
+      color: #000;
+    }
+
+    /* ============== 桌面端布局 ============== */
+    .desktop-container {
+      height: 100vh;
+      width: 100vw;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      gap: clamp(10px, 1.5vw, 20px);
+      padding: clamp(10px, 1.5vw, 20px);
+    }
+
+    .panel {
+      background: linear-gradient(180deg, #1a1f2b, var(--card));
+      border-radius: clamp(12px, 1vw, 16px);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
+      padding: clamp(16px, 2vw, 28px);
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .info-panel {
+      grid-row: 1 / 3;
+    }
+
+    .camera-panel {
+      display: flex;
+      flex-direction: column;
+      gap: clamp(10px, 1vw, 15px);
+    }
+
+    .preview-panel {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .title {
+      font-size: clamp(14px, 1.2vw, 18px);
+      letter-spacing: 0.08em;
+      color: var(--text-sub);
+      margin-bottom: clamp(12px, 1.5vw, 20px);
+      flex-shrink: 0;
+    }
+
+    .block {
+      margin-bottom: clamp(10px, 1.2vw, 16px);
+      flex-shrink: 0;
+    }
+
+    .label {
+      font-size: clamp(10px, 0.8vw, 12px);
+      color: var(--text-sub);
+      margin-bottom: clamp(4px, 0.5vw, 6px);
+    }
+
+    .value {
+      font-size: clamp(16px, 1.5vw, 22px);
+      font-weight: 600;
+      line-height: 1.3;
+      word-break: break-all;
+    }
+
+    .value.small {
+      font-size: clamp(12px, 1vw, 15px);
+      font-weight: 500;
+      color: var(--text-sub);
+    }
+
+    .time {
+      padding-top: clamp(10px, 1vw, 18px);
+      border-top: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .time .value {
+      font-size: clamp(16px, 1.6vw, 24px);
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .btn {
+      width: 100%;
+      padding: clamp(10px, 1vw, 14px) 0;
+      border-radius: clamp(8px, 0.8vw, 12px);
+      border: none;
+      font-size: clamp(13px, 1vw, 15px);
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+
+    .btn.primary {
+      background: #ffffff;
+      color: #0f1115;
+    }
+
+    .btn.secondary {
+      background: #2b3142;
+      color: var(--text-main);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .video-container {
+      width: 100%;
+      flex: 1;
+      background: #000;
+      border-radius: clamp(10px, 1vw, 14px);
+      overflow: hidden;
+      min-height: 0;
+      position: relative;
+    }
+
+    .video-container video {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .preview-container {
+      width: 100%;
+      flex: 1;
+      background: #000;
+      border-radius: clamp(10px, 1vw, 14px);
+      overflow: hidden;
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .preview-container img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+
+    .preview-container .placeholder {
+      color: var(--text-sub);
+      font-size: clamp(12px, 1vw, 14px);
+    }
+
+    .download-link {
+      display: inline-block;
+      margin-top: clamp(8px, 0.8vw, 12px);
+      padding: clamp(8px, 0.8vw, 12px) clamp(16px, 1.5vw, 24px);
+      background: linear-gradient(135deg, var(--accent), #3d8fe8);
+      color: #0f1115;
+      font-size: clamp(12px, 1vw, 14px);
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      flex-shrink: 0;
+      border-radius: clamp(6px, 0.6vw, 8px);
+      transition: all 0.3s ease;
+      box-shadow: 0 2px 8px rgba(77, 163, 255, 0.3);
+    }
+
+    canvas {
+      display: none;
+    }
+
+    /* ============== 移动端布局 ============== */
+    @media (max-width: 768px) {
+      body {
+        overflow: auto;
+      }
+
+      .desktop-container {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: auto;
+        min-height: 100vh;
+        padding: 20px;
+      }
+
+      .panel {
+        width: 100%;
+        margin-bottom: 0;
+      }
+
+      .info-panel {
+        display: block;
+        text-align: center;
+      }
+      
+      .info-panel .label {
+        text-align: center;
+      }
+      
+      .info-panel .value {
+        text-align: center;
+      }
+
+      .camera-panel,
+      .preview-panel {
+        display: none;
+      }
+
+      .mobile-only {
+        display: block !important;
+      }
+
+      .desktop-only {
+        display: none !important;
+      }
+
+      .value {
+        font-size: 20px;
+      }
+
+      .value.small {
+        font-size: 14px;
+      }
+
+      .time .value {
+        font-size: 22px;
+      }
+
+      .btn {
+        padding: 14px 0;
+        font-size: 16px;
+      }
+    }
+
+    .mobile-only {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <!-- 移动端全屏拍照模式 -->
+  <div class="mobile-camera-mode" id="mobileCameraMode">
+    <button class="close-camera-btn" id="closeMobileCamera">×</button>
+    <video class="mobile-camera-video" id="mobileVideo" autoplay playsinline muted></video>
+    <div class="mobile-camera-controls">
+      <button class="shutter-btn" id="mobileShutter">
+        <img src="./photo.png" alt="拍照">
+      </button>
+    </div>
+  </div>
+
+  <!-- 移动端拍照预览模式 -->
+  <div class="photo-preview-mode" id="photoPreviewMode">
+    <img class="photo-preview-img" id="photoPreviewImg" alt="拍照预览">
+    <div class="photo-preview-controls">
+      <button class="preview-btn cancel" id="cancelPhoto">重拍</button>
+      <button class="preview-btn save" id="savePhoto">保存照片</button>
+    </div>
+  </div>
+
+  <!-- 桌面端/移动端主界面 -->
+  <div class="desktop-container">
+    <!-- 地理位置和时间信息 -->
+    <div class="panel info-panel">
+      <div class="title">LOCATION & TIME</div>
+
+      <div class="block">
+        <div class="label">纬度</div>
+        <div class="value" id="latitude">获取中…</div>
+      </div>
+
+      <div class="block">
+        <div class="label">经度</div>
+        <div class="value" id="longitude">获取中…</div>
+      </div>
+
+      <div class="block">
+        <div class="label">所在位置</div>
+        <div class="value small" id="address">解析中…</div>
+      </div>
+
+      <div class="block">
+        <div class="label">定位精度</div>
+        <div class="value small" id="accuracy">—</div>
+      </div>
+
+      <div class="block">
+        <div class="label">定位最后更新时间</div>
+        <div class="value small" id="locationUpdateTime">—</div>
+      </div>
+
+      <div class="block time">
+        <div class="label">当前时间</div>
+        <div class="value" id="time">—</div>
+      </div>
+
+      <!-- 移动端专用按钮 -->
+      <div class="block mobile-only" style="margin-top: 20px;">
+        <button class="btn primary" id="openMobileCamera">打开摄像头</button>
+      </div>
+
+      <!-- 桌面端专用按钮 -->
+      <div class="block desktop-only" style="margin-top: 20px;">
+        <button class="btn secondary" id="openCamera">打开摄像头</button>
+      </div>
+      <div class="block desktop-only">
+        <button class="btn primary" id="takePhoto" style="display: none;">拍照</button>
+      </div>
+    </div>
+
+    <!-- 摄像头取景 -->
+    <div class="panel camera-panel desktop-only">
+      <div class="title">CAMERA</div>
+      <div class="video-container">
+        <video id="video" autoplay playsinline muted></video>
+      </div>
+    </div>
+
+    <!-- 照片预览 -->
+    <div class="panel preview-panel desktop-only">
+      <div class="title">PREVIEW</div>
+      <div class="preview-container" id="previewContainer">
+        <div class="placeholder">照片预览区域</div>
+        <img id="preview" style="display: none;" alt="照片预览">
+      </div>
+      <a class="download-link" id="download" style="display: none;">下载图片</a>
+    </div>
+  </div>
+
+  <canvas id="canvas"></canvas>
+
+  <script>
+    // ============== 基础变量 ==============
+    const latEl = document.getElementById('latitude');
+    const lngEl = document.getElementById('longitude');
+    const accEl = document.getElementById('accuracy');
+    const timeEl = document.getElementById('time');
+    const addrEl = document.getElementById('address');
+    const locationUpdateTimeEl = document.getElementById('locationUpdateTime');
+
+    // 桌面端元素
+    const video = document.getElementById('video');
+    const openBtn = document.getElementById('openCamera');
+    const takeBtn = document.getElementById('takePhoto');
+    const canvas = document.getElementById('canvas');
+    const preview = document.getElementById('preview');
+    const previewContainer = document.getElementById('previewContainer');
+    const download = document.getElementById('download');
+
+    // 移动端元素
+    const openMobileBtn = document.getElementById('openMobileCamera');
+    const mobileCameraMode = document.getElementById('mobileCameraMode');
+    const mobileVideo = document.getElementById('mobileVideo');
+    const closeMobileCamera = document.getElementById('closeMobileCamera');
+    const mobileShutter = document.getElementById('mobileShutter');
+    const photoPreviewMode = document.getElementById('photoPreviewMode');
+    const photoPreviewImg = document.getElementById('photoPreviewImg');
+    const cancelPhoto = document.getElementById('cancelPhoto');
+    const savePhoto = document.getElementById('savePhoto');
+
+    let stream = null;
+    let isMobile = window.innerWidth <= 768;
+
+    // ============== 时间更新 ==============
+    function updateTime() {
+      const n = new Date();
+      timeEl.textContent =
+        n.getFullYear() + '-' +
+        String(n.getMonth() + 1).padStart(2, '0') + '-' +
+        String(n.getDate()).padStart(2, '0') + ' ' +
+        String(n.getHours()).padStart(2, '0') + ':' +
+        String(n.getMinutes()).padStart(2, '0') + ':' +
+        String(n.getSeconds()).padStart(2, '0') + '.' +
+        String(n.getMilliseconds()).padStart(3, '0');
+    }
+
+    setInterval(updateTime, 10);
+    updateTime();
+
+    // ============== 地理位置反向解析 ==============
+    function reverseGeocode(lat, lon) {
+      const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&accept-language=zh-CN`;
+
+      fetch(url, {
+        headers: {
+          'User-Agent': 'location-demo'
+        }
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.display_name) {
+            addrEl.textContent = data.display_name;
+          } else {
+            addrEl.textContent = '无法解析具体位置';
+          }
+        })
+        .catch(() => {
+          addrEl.textContent = '位置解析失败';
+        });
+    }
+
+    // ============== 获取地理位置 ==============
+    function updateLocation() {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          pos => {
+            const { latitude, longitude, accuracy } = pos.coords;
+            latEl.textContent = latitude.toFixed(8);
+            lngEl.textContent = longitude.toFixed(8);
+            accEl.textContent = accuracy.toFixed(2) + '米';
+            reverseGeocode(latitude, longitude);
+            
+            // 更新定位时间
+            const now = new Date();
+            const timeStr = now.getFullYear() + '-' +
+              String(now.getMonth() + 1).padStart(2, '0') + '-' +
+              String(now.getDate()).padStart(2, '0') + ' ' +
+              String(now.getHours()).padStart(2, '0') + ':' +
+              String(now.getMinutes()).padStart(2, '0') + ':' +
+              String(now.getSeconds()).padStart(2, '0') + '.' +
+              String(now.getMilliseconds()).padStart(3, '0');
+            locationUpdateTimeEl.textContent = timeStr;
+          },
+          err => {
+          if (!latEl)
+            latEl.textContent = '定位失败';
+          if (!lngEl)
+            lngEl.textContent = '定位失败';
+          if (!accEl)
+            accEl.textContent = '定位失败';
+          if (!addrEl)
+            addrEl.textContent = '—';
+          if (!locationUpdateTimeEl) {
+            locationUpdateTimeEl.textContent = '—';
+          }
+          },
+          {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0
+          }
+        );
+      } else {
+        latEl.textContent = '不支持定位';
+        lngEl.textContent = '不支持定位';
+        addrEl.textContent = '—';
+        if (locationUpdateTimeEl) {
+          locationUpdateTimeEl.textContent = '—';
+        }
+      }
+    }
+
+    // 首次获取位置
+    updateLocation();
+
+    // 每30秒更新一次位置
+    setInterval(updateLocation, 30000);
+
+    // ============== 拍照处理函数 ==============
+    function capturePhoto(videoElement) {
+      const w = videoElement.videoWidth;
+      const h = videoElement.videoHeight;
+
+      canvas.width = w;
+      canvas.height = h;
+
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(videoElement, 0, 0, w, h);
+
+      // 底部水印背景
+      const watermarkHeight = Math.max(96, h * 0.08);
+      ctx.fillStyle = 'rgba(0,0,0,0.65)';
+      ctx.fillRect(0, h - watermarkHeight, w, watermarkHeight);
+
+      ctx.fillStyle = '#fff';
+      const fontSize = Math.max(16, w * 0.015);
+      ctx.font = `${fontSize}px system-ui`;
+      ctx.textBaseline = 'top';
+
+      const timeText = timeEl.textContent;
+      const locationText = addrEl.textContent || '';
+
+      const padding = Math.max(20, w * 0.02);
+      const lineHeight = fontSize * 1.6;
+
+      ctx.fillText(timeText, padding, h - watermarkHeight + padding);
+      ctx.fillText(locationText, padding, h - watermarkHeight + padding + lineHeight);
+
+      return canvas.toDataURL('image/jpeg', 0.95);
+    }
+
+    function stopCamera() {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        stream = null;
+      }
+    }
+
+    // ============== 桌面端摄像头控制 ==============
+    openBtn.onclick = async () => {
+      if (stream) return;
+
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'environment',
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          },
+          audio: false
+        });
+
+        video.srcObject = stream;
+        takeBtn.style.display = 'block';
+        openBtn.textContent = '摄像头已开启';
+        openBtn.disabled = true;
+      } catch (e) {
+        openBtn.textContent = '无法打开摄像头';
+        alert('无法访问摄像头: ' + e.message);
+      }
+    };
+
+    takeBtn.onclick = () => {
+      if (!stream) return;
+
+      const url = capturePhoto(video);
+
+      preview.src = url;
+      preview.style.display = 'block';
+      previewContainer.querySelector('.placeholder').style.display = 'none';
+
+      download.href = url;
+      download.download = `photo_${Date.now()}.jpg`;
+      download.style.display = 'inline-block';
+    };
+
+    // ============== 移动端摄像头控制 ==============
+    openMobileBtn.onclick = async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'environment',
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          },
+          audio: false
+        });
+
+        mobileVideo.srcObject = stream;
+        mobileCameraMode.classList.add('active');
+      } catch (e) {
+        alert('无法访问摄像头: ' + e.message);
+      }
+    };
+
+    closeMobileCamera.onclick = () => {
+      mobileCameraMode.classList.remove('active');
+      stopCamera();
+    };
+
+    mobileShutter.onclick = () => {
+      if (!stream) return;
+
+      const url = capturePhoto(mobileVideo);
+      photoPreviewImg.src = url;
+
+      mobileCameraMode.classList.remove('active');
+      photoPreviewMode.classList.add('active');
+    };
+
+    cancelPhoto.onclick = () => {
+      photoPreviewMode.classList.remove('active');
+      mobileCameraMode.classList.add('active');
+    };
+
+    savePhoto.onclick = () => {
+      const url = photoPreviewImg.src;
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `photo_${Date.now()}.jpg`;
+      a.click();
+
+      photoPreviewMode.classList.remove('active');
+      stopCamera();
+      alert('照片已保存！');
+    };
+
+    // ============== 响应式处理 ==============
+    window.addEventListener('resize', () => {
+      isMobile = window.innerWidth <= 768;
+    });
+
+    // 页面卸载时关闭摄像头
+    window.addEventListener('beforeunload', () => {
+      stopCamera();
+    });
+  </script>
+</body>
+</html>
