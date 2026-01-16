@@ -531,6 +531,19 @@
     let stream = null;
     let isMobile = window.innerWidth <= 768;
 
+    // ============== 检查摄像头支持 ==============
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      console.warn('此浏览器不支持摄像头API');
+      if (openBtn) {
+        openBtn.disabled = true;
+        openBtn.textContent = '浏览器不支持摄像头';
+      }
+      if (openMobileBtn) {
+        openMobileBtn.disabled = true;
+        openMobileBtn.textContent = '浏览器不支持摄像头';
+      }
+    }
+
     // ============== 时间更新 ==============
     function updateTime() {
       const n = new Date();
@@ -670,6 +683,12 @@
     openBtn.onclick = async () => {
       if (stream) return;
 
+      // 检查浏览器支持
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert('浏览器不支持摄像头访问\n\n请使用现代浏览器（Chrome、Firefox、Edge、Safari等）');
+        return;
+      }
+
       try {
         stream = await navigator.mediaDevices.getUserMedia({
           video: {
@@ -685,8 +704,40 @@
         openBtn.textContent = '摄像头已开启';
         openBtn.disabled = true;
       } catch (e) {
-        openBtn.textContent = '无法打开摄像头';
-        alert('无法访问摄像头: ' + e.message);
+        openBtn.textContent = '重新打开摄像头';
+        openBtn.disabled = false;
+        
+        let errorMsg = '';
+        if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
+          errorMsg = '摄像头权限被拒绝\n\n请在浏览器设置中允许此网站访问摄像头：\n1. 点击地址栏左侧的图标\n2. 找到摄像头权限设置\n3. 选择"允许"或"始终允许"\n4. 刷新页面后重试';
+        } else if (e.name === 'NotFoundError' || e.name === 'DevicesNotFoundError') {
+          errorMsg = '未检测到摄像头设备\n\n请确认：\n1. 设备是否有摄像头\n2. 摄像头是否已正确连接\n3. 其他应用是否正在使用摄像头';
+        } else if (e.name === 'NotReadableError' || e.name === 'TrackStartError') {
+          errorMsg = '摄像头无法启动\n\n可能的原因：\n1. 摄像头正被其他应用占用\n2. 硬件错误\n\n请关闭其他使用摄像头的应用后重试';
+        } else if (e.name === 'OverconstrainedError' || e.name === 'ConstraintNotSatisfiedError') {
+          errorMsg = '摄像头不支持请求的配置\n\n尝试使用默认设置...';
+          
+          // 尝试使用更宽松的配置
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: true,
+              audio: false
+            });
+            video.srcObject = stream;
+            takeBtn.style.display = 'block';
+            openBtn.textContent = '摄像头已开启';
+            openBtn.disabled = true;
+            return;
+          } catch (retryError) {
+            errorMsg = '摄像头启动失败\n\n即使使用默认配置也无法启动摄像头';
+          }
+        } else if (e.name === 'TypeError') {
+          errorMsg = '浏览器不支持摄像头访问\n\n请使用现代浏览器（Chrome、Firefox、Edge、Safari等）';
+        } else {
+          errorMsg = '摄像头访问失败\n\n错误类型: ' + e.name + '\n错误信息: ' + e.message;
+        }
+        
+        alert(errorMsg);
       }
     };
 
@@ -706,6 +757,12 @@
 
     // ============== 移动端摄像头控制 ==============
     openMobileBtn.onclick = async () => {
+      // 检查浏览器支持
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert('浏览器不支持摄像头访问\n\n请使用现代浏览器或升级当前浏览器版本');
+        return;
+      }
+
       try {
         stream = await navigator.mediaDevices.getUserMedia({
           video: {
@@ -719,7 +776,35 @@
         mobileVideo.srcObject = stream;
         mobileCameraMode.classList.add('active');
       } catch (e) {
-        alert('无法访问摄像头: ' + e.message);
+        let errorMsg = '';
+        if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
+          errorMsg = '摄像头权限被拒绝\n\n请在浏览器设置中允许此网站访问摄像头：\n1. 点击地址栏的设置图标\n2. 找到"摄像头"或"相机"权限\n3. 选择"允许"\n4. 刷新页面后重试\n\n如使用Via浏览器等：\n设置 → 隐私 → 网站权限 → 摄像头 → 允许';
+        } else if (e.name === 'NotFoundError' || e.name === 'DevicesNotFoundError') {
+          errorMsg = '未检测到摄像头\n\n请确认设备摄像头是否可用';
+        } else if (e.name === 'NotReadableError' || e.name === 'TrackStartError') {
+          errorMsg = '摄像头被占用\n\n请关闭其他使用摄像头的应用后重试';
+        } else if (e.name === 'OverconstrainedError' || e.name === 'ConstraintNotSatisfiedError') {
+          errorMsg = '摄像头不支持当前配置\n\n尝试使用默认设置...';
+          
+          // 尝试使用更宽松的配置
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: true,
+              audio: false
+            });
+            mobileVideo.srcObject = stream;
+            mobileCameraMode.classList.add('active');
+            return;
+          } catch (retryError) {
+            errorMsg = '摄像头启动失败\n\n即使使用默认配置也无法启动';
+          }
+        } else if (e.name === 'TypeError') {
+          errorMsg = '浏览器不支持摄像头访问\n\n请升级浏览器或使用其他现代浏览器';
+        } else {
+          errorMsg = '摄像头访问失败\n\n错误: ' + e.name + '\n' + e.message;
+        }
+        
+        alert(errorMsg);
       }
     };
 
