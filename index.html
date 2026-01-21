@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <title>经纬相机</title>
+  <title>L-CAMERA 经纬相机</title>
   <link rel="icon" href="./logo.png">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <style>
@@ -456,7 +456,7 @@
   <div class="desktop-container">
     <!-- 地理位置和时间信息 -->
     <div class="panel info-panel">
-      <div class="title">LOCATION & TIME</div>
+      <div class="title">L-CAMERA</div>
 
       <div class="block">
         <div class="label">纬度</div>
@@ -483,6 +483,16 @@
         <div class="value small" id="locationUpdateTime">—</div>
       </div>
 
+      <div class="block">
+        <div class="label">设备朝向（方位角）</div>
+        <div class="value small" id="orientation">检测中…</div>
+      </div>
+
+      <div class="block">
+        <div class="label">天气信息</div>
+        <div class="value small" id="weather">获取中…</div>
+      </div>
+
       <div class="block time">
         <div class="label">当前时间</div>
         <div class="value" id="time">—</div>
@@ -504,7 +514,7 @@
 
     <!-- 摄像头取景 -->
     <div class="panel camera-panel desktop-only">
-      <div class="title">CAMERA</div>
+      <div class="title">摄像</div>
       <div class="video-container">
         <video id="video" autoplay playsinline muted></video>
       </div>
@@ -512,7 +522,7 @@
 
     <!-- 照片预览 -->
     <div class="panel preview-panel desktop-only">
-      <div class="title">PREVIEW</div>
+      <div class="title">预览</div>
       <div class="preview-container" id="previewContainer">
         <div class="placeholder">照片预览区域</div>
         <img id="preview" style="display: none;" alt="照片预览">
@@ -531,6 +541,8 @@
     const timeEl = document.getElementById('time');
     const addrEl = document.getElementById('address');
     const locationUpdateTimeEl = document.getElementById('locationUpdateTime');
+    const orientationEl = document.getElementById('orientation');
+    const weatherEl = document.getElementById('weather');
 
     // 桌面端元素
     const video = document.getElementById('video');
@@ -585,19 +597,43 @@
     setInterval(updateTime, 10);
     updateTime();
 
-    // ============== 地理位置反向解析 ==============
-    function reverseGeocode(lat, lon) {
-      const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&accept-language=zh-CN`;
-
-      fetch(url, {
-        headers: {
-          'User-Agent': 'location-demo'
-        }
-      })
+    // ============== 获取天气信息 ==============
+    function getWeather(adcode) {
+      const url = `https://restapi.amap.com/v3/weather/weatherInfo?key=5def93a40f67da89524a6d85bd526340&city=${adcode}`;
+      
+      fetch(url)
         .then(res => res.json())
         .then(data => {
-          if (data.display_name) {
-            addrEl.textContent = data.display_name;
+          if (data.status === '1' && data.lives && data.lives.length > 0) {
+            const weather = data.lives[0];
+            // 格式化天气信息为一行字符串，用空格隔开
+            const weatherStr = `${weather.weather} ${weather.temperature}℃ ${weather.winddirection}风 ${weather.windpower}级 湿度${weather.humidity}%`;
+            weatherEl.textContent = weatherStr;
+          } else {
+            weatherEl.textContent = '无法获取天气信息';
+          }
+        })
+        .catch(() => {
+          weatherEl.textContent = '天气获取失败';
+        });
+    }
+
+    // ============== 地理位置反向解析 ==============
+    function reverseGeocode(lat, lon) {
+      // 高德地图逆地理编码接口，注意参数顺序是：经度,纬度
+      const url = `https://restapi.amap.com/v3/geocode/regeo?key=5def93a40f67da89524a6d85bd526340&location=${lon},${lat}`;
+
+      fetch(url)
+        .then(res => res.json())
+        .then(data => {
+          // 高德接口返回格式：status=1表示成功，取 regeocode.formatted_address
+          if (data.status === '1' && data.regeocode && data.regeocode.formatted_address) {
+            addrEl.textContent = data.regeocode.formatted_address;
+            
+            // 获取 adcode 并请求天气信息
+            if (data.regeocode.addressComponent && data.regeocode.addressComponent.adcode) {
+              getWeather(data.regeocode.addressComponent.adcode);
+            }
           } else {
             addrEl.textContent = '无法解析具体位置';
           }
@@ -664,6 +700,105 @@
     // 每30秒更新一次位置
     setInterval(updateLocation, 30000);
 
+    // ============== 设备朝向检测 ==============
+    let currentOrientation = null;
+    let orientationSupported = false;
+
+    // 处理设备朝向事件
+    function handleOrientation(event) {
+      if (event.alpha !== null) {
+        orientationSupported = true;
+        // alpha: 0-360度，表示设备绕Z轴旋转的角度（方位角）
+        // 0度=正北，90度=正东，180度=正南，270度=正西
+        currentOrientation = event.alpha;
+      }
+    }
+
+    // 更新朝向显示（每2秒更新一次）
+    function updateOrientationDisplay() {
+      if (currentOrientation !== null) {
+        const alpha = currentOrientation.toFixed(1);
+        let direction = '';
+        
+        // 根据角度判断方向
+        const angle = parseFloat(alpha);
+        if (angle >= 337.5 || angle < 22.5) {
+          direction = '正北';
+        } else if (angle >= 22.5 && angle < 67.5) {
+          direction = '东北';
+        } else if (angle >= 67.5 && angle < 112.5) {
+          direction = '正东';
+        } else if (angle >= 112.5 && angle < 157.5) {
+          direction = '东南';
+        } else if (angle >= 157.5 && angle < 202.5) {
+          direction = '正南';
+        } else if (angle >= 202.5 && angle < 247.5) {
+          direction = '西南';
+        } else if (angle >= 247.5 && angle < 292.5) {
+          direction = '正西';
+        } else if (angle >= 292.5 && angle < 337.5) {
+          direction = '西北';
+        }
+        
+        orientationEl.textContent = `${alpha}° (${direction})`;
+      } else if (orientationSupported === false) {
+        orientationEl.textContent = '设备不支持或未授权';
+      }
+    }
+
+    // 请求设备朝向权限（iOS 13+需要）
+    async function requestOrientationPermission() {
+      if (typeof DeviceOrientationEvent !== 'undefined' && 
+          typeof DeviceOrientationEvent.requestPermission === 'function') {
+        // iOS 13+ 需要用户交互后请求权限
+        try {
+          const permission = await DeviceOrientationEvent.requestPermission();
+          if (permission === 'granted') {
+            window.addEventListener('deviceorientation', handleOrientation);
+            setInterval(updateOrientationDisplay, 2000);
+          } else {
+            orientationEl.textContent = '权限被拒绝';
+          }
+        } catch (error) {
+          console.error('方向传感器权限请求失败:', error);
+          orientationEl.textContent = '权限请求失败';
+        }
+      } else if (window.DeviceOrientationEvent) {
+        // 其他浏览器直接监听
+        window.addEventListener('deviceorientation', handleOrientation);
+        setInterval(updateOrientationDisplay, 2000);
+        
+        // 3秒后检查是否获取到数据
+        setTimeout(() => {
+          if (currentOrientation === null) {
+            orientationEl.textContent = '设备不支持朝向检测';
+          }
+        }, 3000);
+      } else {
+        orientationEl.textContent = '浏览器不支持朝向检测';
+      }
+    }
+
+    // 初始化设备朝向检测
+    requestOrientationPermission();
+
+    // 为移动端打开摄像头按钮添加权限请求（iOS需要在用户交互中请求）
+    if (openMobileBtn) {
+      openMobileBtn.addEventListener('click', () => {
+        if (typeof DeviceOrientationEvent !== 'undefined' && 
+            typeof DeviceOrientationEvent.requestPermission === 'function' &&
+            !orientationSupported) {
+          // 如果还没有请求过权限，在用户点击时请求
+          DeviceOrientationEvent.requestPermission().then(permission => {
+            if (permission === 'granted') {
+              window.addEventListener('deviceorientation', handleOrientation);
+              setInterval(updateOrientationDisplay, 2000);
+            }
+          }).catch(console.error);
+        }
+      }, { once: true, capture: true });
+    }
+
     // ============== 拍照处理函数 ==============
     function capturePhoto(videoElement) {
       const w = videoElement.videoWidth;
@@ -714,6 +849,29 @@
           address !== '—' && 
           address !== '定位失败') {
         infoLines.push('位置: ' + address);
+      }
+      
+      // 6. 设备朝向（方位角）
+      const orientation = orientationEl.textContent;
+      if (orientation && 
+          orientation !== '检测中…' && 
+          orientation !== '设备不支持或未授权' && 
+          orientation !== '权限被拒绝' && 
+          orientation !== '权限请求失败' && 
+          orientation !== '设备不支持朝向检测' && 
+          orientation !== '浏览器不支持朝向检测' && 
+          orientation !== '—') {
+        infoLines.push('设备朝向: ' + orientation);
+      }
+      
+      // 7. 天气信息
+      const weather = weatherEl.textContent;
+      if (weather && 
+          weather !== '获取中…' && 
+          weather !== '天气获取失败' && 
+          weather !== '无法获取天气信息' && 
+          weather !== '—') {
+        infoLines.push('天气: ' + weather);
       }
 
       // 计算字体和间距（更紧凑）
