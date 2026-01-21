@@ -567,6 +567,8 @@
 
     let stream = null;
     let isMobile = window.innerWidth <= 768;
+    let locationPermissionGranted = false;
+    let locationWatchId = null;
 
     // ============== 检查摄像头支持 ==============
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -653,6 +655,7 @@
             lngEl.textContent = longitude.toFixed(8);
             accEl.textContent = accuracy.toFixed(2) + '米';
             reverseGeocode(latitude, longitude);
+            locationPermissionGranted = true;
             
             // 更新定位时间
             const now = new Date();
@@ -666,21 +669,27 @@
             locationUpdateTimeEl.textContent = timeStr;
           },
           err => {
-          if (!latEl)
-            latEl.textContent = '定位失败';
-          if (!lngEl)
-            lngEl.textContent = '定位失败';
-          if (!accEl)
-            accEl.textContent = '定位失败';
-          if (!addrEl)
-            addrEl.textContent = '—';
-          if (!locationUpdateTimeEl) {
-            locationUpdateTimeEl.textContent = '—';
-          }
+            console.error('定位错误:', err);
+            
+            // 根据错误类型给出不同提示
+            let errorMsg = '定位失败';
+            if (err.code === 1) { // PERMISSION_DENIED
+              errorMsg = isMobile ? '未授权（点击按钮申请）' : '定位权限被拒绝';
+            } else if (err.code === 2) { // POSITION_UNAVAILABLE
+              errorMsg = '位置信息不可用';
+            } else if (err.code === 3) { // TIMEOUT
+              errorMsg = '定位超时';
+            }
+            
+            if (latEl) latEl.textContent = errorMsg;
+            if (lngEl) lngEl.textContent = errorMsg;
+            if (accEl) accEl.textContent = '—';
+            if (addrEl) addrEl.textContent = '—';
+            if (locationUpdateTimeEl) locationUpdateTimeEl.textContent = '—';
           },
           {
             enableHighAccuracy: true,
-            timeout: 10000,
+            timeout: 15000,
             maximumAge: 0
           }
         );
@@ -694,11 +703,124 @@
       }
     }
 
+    // 移动端精确定位权限申请
+    function requestPreciseLocation() {
+      if (!navigator.geolocation) {
+        alert('您的设备不支持定位功能');
+        return;
+      }
+
+      // 显示提示
+      const loadingMsg = isMobile ? '正在请求精确定位权限...' : '正在获取位置...';
+      latEl.textContent = loadingMsg;
+      lngEl.textContent = loadingMsg;
+
+      // 请求高精度定位
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          const { latitude, longitude, accuracy } = pos.coords;
+          latEl.textContent = latitude.toFixed(8);
+          lngEl.textContent = longitude.toFixed(8);
+          accEl.textContent = accuracy.toFixed(2) + '米';
+          reverseGeocode(latitude, longitude);
+          locationPermissionGranted = true;
+          
+          // 更新定位时间
+          const now = new Date();
+          const timeStr = now.getFullYear() + '-' +
+            String(now.getMonth() + 1).padStart(2, '0') + '-' +
+            String(now.getDate()).padStart(2, '0') + ' ' +
+            String(now.getHours()).padStart(2, '0') + ':' +
+            String(now.getMinutes()).padStart(2, '0') + ':' +
+            String(now.getSeconds()).padStart(2, '0') + '.' +
+            String(now.getMilliseconds()).padStart(3, '0');
+          locationUpdateTimeEl.textContent = timeStr;
+
+          // 移动端授权成功提示
+          if (isMobile) {
+            alert('✓ 精确定位权限已授予\n\n定位精度: ' + accuracy.toFixed(2) + '米');
+          }
+
+          // 启动持续定位监听（移动端）
+          if (isMobile && !locationWatchId) {
+            locationWatchId = navigator.geolocation.watchPosition(
+              pos => {
+                const { latitude, longitude, accuracy } = pos.coords;
+                latEl.textContent = latitude.toFixed(8);
+                lngEl.textContent = longitude.toFixed(8);
+                accEl.textContent = accuracy.toFixed(2) + '米';
+                reverseGeocode(latitude, longitude);
+                
+                const now = new Date();
+                const timeStr = now.getFullYear() + '-' +
+                  String(now.getMonth() + 1).padStart(2, '0') + '-' +
+                  String(now.getDate()).padStart(2, '0') + ' ' +
+                  String(now.getHours()).padStart(2, '0') + ':' +
+                  String(now.getMinutes()).padStart(2, '0') + ':' +
+                  String(now.getSeconds()).padStart(2, '0') + '.' +
+                  String(now.getMilliseconds()).padStart(3, '0');
+                locationUpdateTimeEl.textContent = timeStr;
+              },
+              err => console.error('持续定位错误:', err),
+              {
+                enableHighAccuracy: true,
+                timeout: 15000,
+                maximumAge: 0
+              }
+            );
+          }
+        },
+        err => {
+          console.error('定位错误:', err);
+          
+          let errorMsg = '';
+          if (err.code === 1) { // PERMISSION_DENIED
+            errorMsg = '定位权限被拒绝\n\n请在设备设置中允许浏览器访问位置信息：\n\n';
+            if (isMobile) {
+              // 移动端的详细说明
+              if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
+                errorMsg += 'iOS设备：\n设置 → Safari/浏览器 → 位置 → 允许\n或\n设置 → 隐私 → 定位服务 → Safari/浏览器 → 使用应用期间';
+              } else if (/Android/.test(navigator.userAgent)) {
+                errorMsg += 'Android设备：\n设置 → 应用 → 浏览器 → 权限 → 位置 → 允许';
+              } else {
+                errorMsg += '请在浏览器或系统设置中允许定位权限';
+              }
+            }
+            latEl.textContent = '权限被拒绝';
+            lngEl.textContent = '权限被拒绝';
+          } else if (err.code === 2) { // POSITION_UNAVAILABLE
+            errorMsg = '无法获取位置信息\n\n可能的原因：\n• GPS信号弱，请移到开阔区域\n• 定位服务未开启\n• 网络连接问题';
+            latEl.textContent = '位置不可用';
+            lngEl.textContent = '位置不可用';
+          } else if (err.code === 3) { // TIMEOUT
+            errorMsg = '定位请求超时\n\n请检查：\n• GPS是否开启\n• 网络连接是否正常\n• 是否在室内（建议到室外尝试）';
+            latEl.textContent = '定位超时';
+            lngEl.textContent = '定位超时';
+          }
+          
+          if (errorMsg) {
+            alert(errorMsg);
+          }
+          
+          accEl.textContent = '—';
+          addrEl.textContent = '—';
+          locationUpdateTimeEl.textContent = '—';
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 20000,
+          maximumAge: 0
+        }
+      );
+    }
+
     // 首次获取位置
     updateLocation();
 
-    // 每30秒更新一次位置
-    setInterval(updateLocation, 30000);
+    // 每30秒更新一次位置（桌面端）
+    if (!isMobile) {
+      setInterval(updateLocation, 30000);
+    }
 
     // ============== 设备朝向检测 ==============
     let currentOrientation = null;
@@ -797,6 +919,19 @@
           }).catch(console.error);
         }
       }, { once: true, capture: true });
+    }
+
+    // 移动端：延迟3秒后检查定位权限，如果失败则提示用户
+    if (isMobile) {
+      setTimeout(() => {
+        if (!locationPermissionGranted && 
+            (latEl.textContent.includes('未授权') || latEl.textContent.includes('失败'))) {
+          // 显示友好提示
+          if (confirm('📍 检测到定位权限未授予\n\n点击确定申请精确定位权限，以获得更准确的经纬度信息\n\n（建议开启，拍照时可记录准确位置）')) {
+            requestPreciseLocation();
+          }
+        }
+      }, 3000);
     }
 
     // ============== 拍照处理函数 ==============
@@ -1038,6 +1173,16 @@
 
     // ============== 移动端摄像头控制 ==============
     openMobileBtn.onclick = async () => {
+      // 移动端：先请求精确定位权限
+      if (isMobile && !locationPermissionGranted) {
+        const confirmLocation = confirm('检测到您是移动设备\n\n是否申请精确定位权限以获得更准确的位置信息？\n\n（推荐开启，拍照时可获得更精确的经纬度）');
+        if (confirmLocation) {
+          requestPreciseLocation();
+          // 等待一下让用户看到定位结果
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
       // 检查浏览器支持
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         alert('浏览器不支持摄像头访问\n\n请使用现代浏览器或升级当前浏览器版本');
@@ -1169,9 +1314,12 @@
       isMobile = window.innerWidth <= 768;
     });
 
-    // 页面卸载时关闭摄像头
+    // 页面卸载时关闭摄像头和定位监听
     window.addEventListener('beforeunload', () => {
       stopCamera();
+      if (locationWatchId) {
+        navigator.geolocation.clearWatch(locationWatchId);
+      }
     });
   </script>
 </body>
